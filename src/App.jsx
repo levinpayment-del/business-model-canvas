@@ -30,10 +30,7 @@ const EMPTY_STATE = () => {
 
 async function dbGet() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/canvas?id=eq.main&select=data`, {
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-    }
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
   })
   const rows = await res.json()
   if (rows && rows.length > 0) return rows[0].data
@@ -61,9 +58,12 @@ export default function App() {
   const [hint, setHint] = useState('')
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('טוען...')
+  const [editingId, setEditingId] = useState(null)
+  const [editingText, setEditingText] = useState('')
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
   const inputRefs = useRef({})
+  const editInputRef = useRef(null)
   const saveTimeout = useRef(null)
 
   const fetchState = useCallback(async () => {
@@ -102,6 +102,35 @@ export default function App() {
   }, [fetchState])
 
   useEffect(() => { drawLines() }, [state, connectMode, srcId])
+
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus()
+      editInputRef.current.select()
+    }
+  }, [editingId])
+
+  function startEdit(note, e) {
+    e.stopPropagation()
+    if (connectMode) return
+    setEditingId(note.id)
+    setEditingText(note.t)
+  }
+
+  function commitEdit(k) {
+    const trimmed = editingText.trim()
+    if (!trimmed) { setEditingId(null); return }
+    const newState = {
+      ...state,
+      notes: {
+        ...state.notes,
+        [k]: state.notes[k].map(n => n.id === editingId ? { ...n, t: trimmed } : n)
+      }
+    }
+    setState(newState)
+    debouncedSave(newState)
+    setEditingId(null)
+  }
 
   function addNote(k) {
     const el = inputRefs.current[k]
@@ -250,7 +279,10 @@ export default function App() {
             <Cell key={sec.k} sec={sec} notes={state.notes[sec.k] || []}
               connectMode={connectMode} srcId={srcId} srcConnected={srcConnected}
               onNoteClick={noteClick} onDelNote={delNote} onAddNote={addNote}
-              inputRef={el => inputRefs.current[sec.k] = el} connCount={connCount} />
+              inputRef={el => inputRefs.current[sec.k] = el} connCount={connCount}
+              editingId={editingId} editingText={editingText}
+              onStartEdit={startEdit} onEditChange={setEditingText}
+              onCommitEdit={commitEdit} editInputRef={editInputRef} />
           ))}
         </div>
       </div>
@@ -262,7 +294,7 @@ export default function App() {
   )
 }
 
-function Cell({ sec, notes, connectMode, srcId, srcConnected, onNoteClick, onDelNote, onAddNote, inputRef, connCount }) {
+function Cell({ sec, notes, connectMode, srcId, srcConnected, onNoteClick, onDelNote, onAddNote, inputRef, connCount, editingId, editingText, onStartEdit, onEditChange, onCommitEdit, editInputRef }) {
   const areaStyle = {
     kp:   { gridColumn: '9/11', gridRow: '1/3' },
     ka:   { gridColumn: '7/9',  gridRow: '1' },
@@ -287,27 +319,63 @@ function Cell({ sec, notes, connectMode, srcId, srcConnected, onNoteClick, onDel
           const isSrc = note.id === srcId
           const isConnected = srcId && srcConnected.includes(note.id)
           const cnt = connCount(note.id)
+          const isEditing = editingId === note.id
           const uc = [
             { bg: '#EEF4FF', color: '#1e40af' },
             { bg: '#F0FDF4', color: '#166534' },
             { bg: '#FFF7ED', color: '#9a3412' },
           ][note.u]
+
+          if (isEditing) {
+            return (
+              <div key={note.id} data-note-id={note.id} style={{
+                fontSize: 11, borderRadius: 5, background: uc.bg, padding: '3px 4px'
+              }}>
+                <span style={{ fontSize: 9, opacity: 0.65, fontWeight: 600, display: 'block', marginBottom: 2, textAlign: 'right', color: uc.color }}>{USERS[note.u]}</span>
+                <div style={{ display: 'flex', gap: 3, flexDirection: 'row-reverse' }}>
+                  <input
+                    ref={editInputRef}
+                    value={editingText}
+                    onChange={e => onEditChange(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') onCommitEdit(sec.k)
+                      if (e.key === 'Escape') onCommitEdit(sec.k)
+                    }}
+                    onBlur={() => onCommitEdit(sec.k)}
+                    dir="rtl"
+                    style={{
+                      flex: 1, fontSize: 11, padding: '2px 5px', border: `1.5px solid ${uc.color}`,
+                      borderRadius: 4, background: '#fff', color: uc.color,
+                      fontFamily: 'inherit', direction: 'rtl', textAlign: 'right', outline: 'none', minWidth: 0
+                    }}
+                  />
+                </div>
+              </div>
+            )
+          }
+
           return (
-            <div key={note.id} data-note-id={note.id} onClick={() => onNoteClick(note.id)} style={{
-              fontSize: 11, lineHeight: 1.45, padding: '4px 6px 4px 20px', borderRadius: 5,
-              position: 'relative', textAlign: 'right', direction: 'rtl', wordBreak: 'break-word',
-              cursor: connectMode ? 'pointer' : 'default', background: uc.bg, color: uc.color,
-              outline: isSrc ? '2.5px solid #a855f7' : isConnected ? '2px solid #22c55e' : 'none',
-              outlineOffset: 1,
-            }}>
+            <div key={note.id} data-note-id={note.id}
+              onClick={() => onNoteClick(note.id)}
+              onDoubleClick={e => onStartEdit(note, e)}
+              style={{
+                fontSize: 11, lineHeight: 1.45, padding: '4px 6px 4px 20px', borderRadius: 5,
+                position: 'relative', textAlign: 'right', direction: 'rtl', wordBreak: 'break-word',
+                cursor: connectMode ? 'pointer' : 'default', background: uc.bg, color: uc.color,
+                outline: isSrc ? '2.5px solid #a855f7' : isConnected ? '2px solid #22c55e' : 'none',
+                outlineOffset: 1,
+              }}>
               <span style={{ fontSize: 9, opacity: 0.65, fontWeight: 600, display: 'block', marginBottom: 1 }}>{USERS[note.u]}</span>
               {note.t}
               {cnt > 0 && (
                 <span style={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', fontSize: 9, fontWeight: 600, background: '#a855f7', color: '#fff', borderRadius: 10, padding: '1px 4px', lineHeight: 1.4 }}>{cnt}</span>
               )}
               {!connectMode && (
-                <button onClick={e => { e.stopPropagation(); onDelNote(sec.k, note.id) }} style={{ position: 'absolute', left: cnt > 0 ? 20 : 2, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'inherit', opacity: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 3 }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0} aria-label="מחק">×</button>
+                <button onClick={e => { e.stopPropagation(); onDelNote(sec.k, note.id) }}
+                  style={{ position: 'absolute', left: cnt > 0 ? 20 : 2, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'inherit', opacity: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 3 }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                  onMouseLeave={e => e.currentTarget.style.opacity = 0}
+                  aria-label="מחק">×</button>
               )}
             </div>
           )
