@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 const SUPABASE_URL = 'https://sepknqienhtyzjtqdqbt.supabase.co'
 const SUPABASE_KEY = 'sb_publishable_8cHUxuJWiOto2KBd0Ll6Cw_vTEr3kCW'
 
-const USERS = ['עוז', 'נעמה', 'ערן']
+const USERS = ['עוז', 'נועה', 'ערן']
 const USER_COLORS = [
   { bg: '#EEF4FF', color: '#1e40af', border: '#93c5fd' },
   { bg: '#F0FDF4', color: '#166534', border: '#86efac' },
